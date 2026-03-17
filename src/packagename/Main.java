@@ -8,6 +8,6 @@ public class Main {
         System.out.println("Hello world!");
     }
     public Main(){
-        System.out.println("Объект создан успешно");
+//        System.out.println("Объект создан успешно");
     }
 }

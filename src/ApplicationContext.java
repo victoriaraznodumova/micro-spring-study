@@ -15,19 +15,27 @@ import static java.util.stream.Collectors.toList;
 
 public class ApplicationContext {
     static ArrayList<Bean> beans = new ArrayList<>();
-    public static List<String> scanPackage(String packageName) {
-        String newPackageName = packageName.replace('.', '/');
+    public static List<String> scanPackage(String packageName) throws IOException {
+        Path targetPath = getTargetPath(packageName);
         List<String> classFilesList;
-        try (Stream<Path> filesAndDirs = Files.walk(Path.of("./src/" + newPackageName))){
+        try (Stream<Path> filesAndDirs = Files.walk(targetPath)){
             classFilesList = filesAndDirs
                     .filter(Files::isRegularFile)
                     .filter(ApplicationContext::isClassFile)
                     .map(path -> {
-                        Path stcPath = Path.of("./src");
-                        Path relativePath = stcPath.relativize(path);
-                        String fullClassName = relativePath.toString()
+                        Path relativePath = targetPath.relativize(path);
+                        String relativeClassName = relativePath.toString()
                                 .replace(File.separator, ".")
                                 .replace(".class", "");
+                        String fullClassName;
+                        if (relativeClassName.isEmpty()) {
+                            fullClassName = packageName;
+                        } else {
+                            fullClassName = packageName + "." + relativeClassName;
+                        }
+                        if (fullClassName.startsWith(".")){
+                            fullClassName = fullClassName.substring(1);
+                        }
                         return fullClassName;
                     })
                     .filter(Objects::nonNull)
@@ -40,7 +48,22 @@ public class ApplicationContext {
         }
         return classFilesList;
     }
-    public static void addNewBean(String packageName) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+
+    public static Path getTargetPath(String packageName) throws IOException {
+        String projectRoot = System.getProperty("user.dir");
+        File outDir = new File(projectRoot, "out");
+        Path targetPath;
+        try (Stream<Path> path = Files.walk(Path.of(outDir.getPath()))){
+            targetPath = path.filter(p ->
+                            p.toString().endsWith(packageName.replace('.', File.separatorChar)))
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("Пакет " + packageName + " не найден"));
+        }
+        System.out.println(targetPath);
+        return targetPath;
+    }
+
+    public static void addNewBean(String packageName) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, IOException {
         List<String> classFilesList = scanPackage(packageName);
         List<Class<?>> classFiles = classFilesList.stream().map(classFile -> {
             try {
@@ -72,11 +95,12 @@ public class ApplicationContext {
         return path.getFileName().toString().endsWith(".class");
     }
 
-    public static void main(String[] args) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+    public static void main(String[] args) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, IOException {
         //типа тест
         addNewBean("packagename.packagename2");
         addNewBean("annotations");
         addNewBean("packagename");
+//        addNewBean("");
         System.out.println("Список бинов в контексте:");
         for (Bean bean: beans) {
             System.out.println(bean.getBeanObject().getClass());
