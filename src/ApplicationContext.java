@@ -5,23 +5,26 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toList;
 
 public class ApplicationContext {
-    static ArrayList<Bean> beans = new ArrayList<>();
-    public static List<String> scanPackage(String packageName) throws IOException {
+    Map<Class<?>, Object> beansMap = new HashMap<>();
+
+    public ApplicationContext(String packageName) throws IOException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+        addNewBean(packageName);
+    }
+
+    public List<String> scanPackage(String packageName) throws IOException {
         Path targetPath = getTargetPath(packageName);
         List<String> classFilesList;
         try (Stream<Path> filesAndDirs = Files.walk(targetPath)){
             classFilesList = filesAndDirs
                     .filter(Files::isRegularFile)
-                    .filter(ApplicationContext::isClassFile)
+                    .filter(path1 -> isClassFile(path1))
                     .map(path -> {
                         Path relativePath = targetPath.relativize(path);
                         String relativeClassName = relativePath.toString()
@@ -49,7 +52,7 @@ public class ApplicationContext {
         return classFilesList;
     }
 
-    public static Path getTargetPath(String packageName) throws IOException {
+    public Path getTargetPath(String packageName) throws IOException {
         String projectRoot = System.getProperty("user.dir");
         File outDir = new File(projectRoot, "out");
         Path targetPath;
@@ -59,11 +62,11 @@ public class ApplicationContext {
                     .findFirst()
                     .orElseThrow(() -> new RuntimeException("Пакет " + packageName + " не найден"));
         }
-        System.out.println(targetPath);
+//        System.out.println(targetPath);
         return targetPath;
     }
 
-    public static void addNewBean(String packageName) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, IOException {
+    public void addNewBean(String packageName) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, IOException {
         List<String> classFilesList = scanPackage(packageName);
         List<Class<?>> classFiles = classFilesList.stream().map(classFile -> {
             try {
@@ -80,30 +83,18 @@ public class ApplicationContext {
                 System.out.println("Класс " + classFile.getSimpleName() + " содержит аннотацию @MyComponent");
             }
         }
-        for (Class classFile: classesWithAnnotation) {
-            Bean newBean = new Bean(classFile.getDeclaredConstructor().newInstance());
-            beans.add(newBean);
+        for (Class<?> classFile: classesWithAnnotation) {
+            Object newBean = classFile.getDeclaredConstructor().newInstance();
+            beansMap.put(newBean.getClass(), newBean);
         }
         System.out.println();
     }
 
-    public static boolean markedWithAnnotation(Class className){
-        return className.isAnnotationPresent(MyComponent.class); //подумать, нужно ли передавать аннотацию в параметрах
+    public boolean markedWithAnnotation(Class clazz){
+        return clazz.isAnnotationPresent(MyComponent.class); //подумать, нужно ли передавать аннотацию в параметрах
     }
 
-    public static boolean isClassFile(Path path){
+    public boolean isClassFile(Path path){
         return path.getFileName().toString().endsWith(".class");
-    }
-
-    public static void main(String[] args) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, IOException {
-        //типа тест
-        addNewBean("packagename.packagename2");
-        addNewBean("annotations");
-        addNewBean("packagename");
-//        addNewBean("");
-        System.out.println("Список бинов в контексте:");
-        for (Bean bean: beans) {
-            System.out.println(bean.getBeanObject().getClass());
-        }
     }
 }
