@@ -3,8 +3,11 @@ import annotations.MyComponent;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -14,11 +17,16 @@ import static java.util.stream.Collectors.toList;
 public class ApplicationContext {
     Map<Class<?>, Object> beansMap = new HashMap<>();
 
-    public ApplicationContext(String packageName) throws IOException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+    public ApplicationContext(String packageName) throws IOException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, URISyntaxException {
         addNewBean(packageName);
     }
 
-    public List<String> scanPackage(String packageName) throws IOException {
+    public Path getTargetPath(String packageName) throws URISyntaxException {
+        URL url = getClass().getClassLoader().getResource(packageName.replace('.', '/'));
+        return Paths.get(url.toURI());
+    }
+
+    public List<String> scanPackage(String packageName) throws URISyntaxException {
         Path targetPath = getTargetPath(packageName);
         List<String> classFilesList;
         try (Stream<Path> filesAndDirs = Files.walk(targetPath)){
@@ -52,21 +60,7 @@ public class ApplicationContext {
         return classFilesList;
     }
 
-    public Path getTargetPath(String packageName) throws IOException {
-        String projectRoot = System.getProperty("user.dir");
-        File outDir = new File(projectRoot, "out");
-        Path targetPath;
-        try (Stream<Path> path = Files.walk(Path.of(outDir.getPath()))){
-            targetPath = path.filter(p ->
-                            p.toString().endsWith(packageName.replace('.', File.separatorChar)))
-                    .findFirst()
-                    .orElseThrow(() -> new RuntimeException("Пакет " + packageName + " не найден"));
-        }
-//        System.out.println(targetPath);
-        return targetPath;
-    }
-
-    public void addNewBean(String packageName) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, IOException {
+    public void addNewBean(String packageName) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, IOException, URISyntaxException {
         List<String> classFilesList = scanPackage(packageName);
         List<Class<?>> classFiles = classFilesList.stream().map(classFile -> {
             try {
