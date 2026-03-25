@@ -1,4 +1,5 @@
 import annotations.MyAutowired;
+import annotations.MyQualifier;
 
 import java.lang.reflect.Field;
 import java.util.*;
@@ -7,7 +8,6 @@ import java.util.stream.Collectors;
 import static java.util.stream.Collectors.toList;
 
 public class DependencyInjector {
-//    private final Map<Class<?>, Object> beansMap;
     private final Map<String, BeanDefinition> newBeansMap;
 
     public DependencyInjector(Map<String, BeanDefinition> newBeansMap) {
@@ -21,9 +21,19 @@ public class DependencyInjector {
             Object object = beanDef.getObject();
             number.addAndGet(1);
             Map<Class<?>, List<Class<?>>> dependencyGraph = new HashMap<>();
+            List<Field> qualifierFields = Arrays.stream(object.getClass().getDeclaredFields())
+                    .filter(field -> field.isAnnotationPresent(MyQualifier.class))
+                    .collect(toList());
             List<Field> autowiredFields = Arrays.stream(object.getClass().getDeclaredFields())
                     .filter(field -> field.isAnnotationPresent(MyAutowired.class))
                     .collect(toList());
+            qualifierFields.forEach(field -> {
+                System.out.println(number + ") В бине типа " + clazz.getSimpleName()
+                        + " инжектится поле " + beanId + " типа " + field.getType().getSimpleName());
+                if (field.getType() != null) {
+                    dependencyGraph.computeIfAbsent(clazz, k -> new ArrayList<>()).add(field.getType());
+                }
+            });
             autowiredFields.forEach(field -> {
                 System.out.println(number + ") В бине типа " + clazz.getSimpleName()
                         + " инжектится поле " + field.getName() + " типа " + field.getType().getSimpleName());
@@ -31,7 +41,7 @@ public class DependencyInjector {
                     dependencyGraph.computeIfAbsent(clazz, k -> new ArrayList<>()).add(field.getType());
                 }
             });
-            if (autowiredFields.isEmpty()) { //или если dependencyGraph пустой
+            if (autowiredFields.isEmpty() && qualifierFields.isEmpty()) { //или если dependencyGraph пустой
                 System.out.println(number + ") Бин " + object + " не имеет зависимостей");
                 System.out.println();
                 return;
@@ -65,7 +75,6 @@ public class DependencyInjector {
                 }
                 String generatedBeanId = ApplicationContext.generateBeanId(dependency); //как брать бин из мапы, если его айдишник генерируется по-другому....
                 Object dependencyObject = newBeansMap.get(generatedBeanId).getObject();
-//                Object dependencyObject = beansMap.get(dependency);
                 if (dependencyObject == null) continue;
                 List<Class<?>> nextDependencies = Arrays.stream(dependencyObject.getClass().getDeclaredFields())
                         .filter(field -> field.isAnnotationPresent(MyAutowired.class))
@@ -84,7 +93,11 @@ public class DependencyInjector {
                     validDependencyPaths.addAll(subPaths);
                 }
             } catch (CyclicDependencyException e) {
-                    System.out.println(e.getMessage());
+                System.out.println(e.getMessage());
+            }
+            catch (NullPointerException e){
+                System.out.println("Бин типа " + dependency.getSimpleName() + " не найден в контексте");
+                System.out.println(e.getMessage());
             }
         }
         return validDependencyPaths;
@@ -95,14 +108,12 @@ public class DependencyInjector {
         for(int i = validPath.size() - 2; i >= 0; i--) {
             Class<?> currentClass = validPath.get(i);
             Class<?> dependencyClass = validPath.get(i + 1);
-//            Object currentObject = beansMap.get(currentClass);
-//            Object dependencyObject = beansMap.get(dependencyClass);
             String currentClassBeanId = ApplicationContext.generateBeanId(currentClass); //как брать бин из мапы, если его айдишник генерируется по-другому...
-            String dependencyClassBeanId = ApplicationContext.generateBeanId(dependencyClass); //как брать бин из мапы, если его айдишник генерируется по-другому...
+//            String dependencyClassBeanId = ApplicationContext.generateBeanId(dependencyClass); //как брать бин из мапы, если его айдишник генерируется по-другому...
             Object currentObject = newBeansMap.get(currentClassBeanId).getObject();
-            Object dependencyObject = newBeansMap.get(dependencyClassBeanId).getObject();
+//            Object dependencyObject = newBeansMap.get(dependencyClassBeanId).getObject();
             if (currentObject == null) System.out.println("Бина типа " + currentClass.getSimpleName() + " нет в контексте");
-            if (dependencyObject == null) System.out.println("Бина типа " + dependencyClass.getSimpleName() + " нет в контексте");
+//            if (dependencyObject == null) System.out.println("Бина типа " + dependencyClass.getSimpleName() + " нет в контексте");
             for (Field field: currentClass.getDeclaredFields()){
                 if (!field.isAnnotationPresent(MyAutowired.class)) continue;
                 if (!field.getType().equals(dependencyClass)) continue;
@@ -114,6 +125,19 @@ public class DependencyInjector {
                                 + " уже инъектирована зависимость " + existingValue);
                         continue;
                     }
+                    String dependencyClassBeanId;
+                    if (field.isAnnotationPresent(MyQualifier.class)){
+                        dependencyClassBeanId = field.getAnnotation(MyQualifier.class).beanId();
+                    }
+                    else{
+                        dependencyClassBeanId = ApplicationContext.generateBeanId(dependencyClass);
+                    }
+                    BeanDefinition dependencyBean = newBeansMap.get(dependencyClassBeanId);
+                    if (dependencyBean == null) {
+                        System.out.println("Бин с id " + dependencyBean + " не найден");
+                        continue;
+                    }
+                    Object dependencyObject = dependencyBean.getObject();
                     field.set(currentObject, dependencyObject);
                     System.out.println("В бине " + currentObject + " в поле " + field.getName() + " только что была выполнена инъекция зависимости " + field.get(currentObject));
                 }

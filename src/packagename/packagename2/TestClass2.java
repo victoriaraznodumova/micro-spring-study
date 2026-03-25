@@ -5,7 +5,7 @@ import annotations.MyComponent;
 import packagename.TestClass1;
 
 @MyComponent
-public class TestClass2 {
+public class TestClass2 implements ITestClass {
     @MyAutowired
     TestClass1 testClass1;
 }
