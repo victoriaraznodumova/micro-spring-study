@@ -15,24 +15,33 @@ import java.util.stream.Stream;
 import static java.util.stream.Collectors.toList;
 
 public class ApplicationContext {
-    Map<Class<?>, Object> beansMap = new HashMap<>();
+    private Map<Class<?>, Object> beansMap = new HashMap<>();
 
-    public ApplicationContext(String packageName) throws IOException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, URISyntaxException {
+    public Map<Class<?>, Object> getBeansMap() {
+        return beansMap;
+    }
+
+    public ApplicationContext(String packageName) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, URISyntaxException {
         addNewBean(packageName);
     }
 
-    public Path getTargetPath(String packageName) throws URISyntaxException {
+    public Path getTargetPathToPackage(String packageName) throws URISyntaxException {
         URL url = getClass().getClassLoader().getResource(packageName.replace('.', '/'));
-        return Paths.get(url.toURI());
+        if (url != null) {
+            return Paths.get(url.toURI());
+        }
+        else{
+            throw new RuntimeException("Невозможно получить корректный путь к пакету " + packageName);
+        }
     }
 
     public List<String> scanPackage(String packageName) throws URISyntaxException {
-        Path targetPath = getTargetPath(packageName);
+        Path targetPath = getTargetPathToPackage(packageName);
         List<String> classFilesList;
         try (Stream<Path> filesAndDirs = Files.walk(targetPath)){
             classFilesList = filesAndDirs
                     .filter(Files::isRegularFile)
-                    .filter(path1 -> isClassFile(path1))
+                    .filter(this::isClassFile)
                     .map(path -> {
                         Path relativePath = targetPath.relativize(path);
                         String relativeClassName = relativePath.toString()
@@ -57,12 +66,13 @@ public class ApplicationContext {
             e.printStackTrace();
             classFilesList = List.of();
         }
+        System.out.println();
         return classFilesList;
     }
 
-    public void addNewBean(String packageName) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, IOException, URISyntaxException {
-        List<String> classFilesList = scanPackage(packageName);
-        List<Class<?>> classFiles = classFilesList.stream().map(classFile -> {
+    public void addNewBean(String packageName) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, URISyntaxException {
+        List<String> classFilesNames = scanPackage(packageName);
+        List<Class<?>> classFiles = classFilesNames.stream().map(classFile -> {
             try {
                 return Class.forName(classFile);
             } catch (ClassNotFoundException e) {
@@ -79,6 +89,7 @@ public class ApplicationContext {
         }
         for (Class<?> classFile: classesWithAnnotation) {
             Object newBean = classFile.getDeclaredConstructor().newInstance();
+            System.out.println("Добавление бина " + newBean + " в контекст");
             beansMap.put(newBean.getClass(), newBean);
         }
         System.out.println();

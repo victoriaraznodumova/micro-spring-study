@@ -1,6 +1,10 @@
 package packagename;
 
+import annotations.MyAutowired;
 import annotations.MyComponent;
+import packagename.packagename2.TestClass2;
+import packagename.packagename2.TestClass3;
+
 
 @MyComponent
 public class Main {
@@ -8,6 +12,13 @@ public class Main {
         System.out.println("Hello world!");
     }
     public Main(){
-//        System.out.println("Объект создан успешно");
     }
+
+
+
+    @MyAutowired
+    TestClass2 testClass2;
+
+    @MyAutowired
+    TestClass3 testClass3;
 }
