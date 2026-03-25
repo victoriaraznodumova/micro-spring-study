@@ -7,14 +7,18 @@ import java.util.stream.Collectors;
 import static java.util.stream.Collectors.toList;
 
 public class DependencyInjector {
-    private final Map<Class<?>, Object> beansMap;
-    public DependencyInjector(Map<Class<?>, Object> beansMap) {
-        this.beansMap = beansMap;
+//    private final Map<Class<?>, Object> beansMap;
+    private final Map<String, BeanDefinition> newBeansMap;
+
+    public DependencyInjector(Map<String, BeanDefinition> newBeansMap) {
+        this.newBeansMap = newBeansMap;
     }
 
     public void dependencyInjection() {
         AtomicInteger number = new AtomicInteger(); //для удобства, потом удалю
-        beansMap.forEach((clazz, object) -> {
+        newBeansMap.forEach((beanId, beanDef) -> {
+            Class<?> clazz = beanDef.getBeanClass();
+            Object object = beanDef.getObject();
             number.addAndGet(1);
             Map<Class<?>, List<Class<?>>> dependencyGraph = new HashMap<>();
             List<Field> autowiredFields = Arrays.stream(object.getClass().getDeclaredFields())
@@ -37,14 +41,7 @@ public class DependencyInjector {
                 v.forEach(dep -> System.out.print(dep.getSimpleName() + " "));
                 System.out.println();
             });
-            List<List<Class<?>>> validDependencyPaths = findValidDependencyPaths(clazz, dependencyGraph, new ArrayList<>());
-//            if (!validDependencyPaths.isEmpty()) {
-//                System.out.println("Будет выполняться инъекция зависимостей в бин типа " + clazz.getSimpleName());
-//                for (List<Class<?>> validPath: validDependencyPaths ) {
-//                    printPathOfDependencies(validPath, null, false);
-//                    inject(validPath);
-//                }
-//            }
+            findValidDependencyPaths(clazz, dependencyGraph, new ArrayList<>());
             System.out.println();
         });
     }
@@ -64,12 +61,11 @@ public class DependencyInjector {
             try {
                 System.out.println(clazz.getSimpleName() + " -> " + dependency.getSimpleName());
                 if (path.contains(dependency)) {
-//                    System.out.println("\nНайдена циклическая зависимость");
-//                    printPathOfDependencies(path, dependency, true);
-//                    continue;
                     throw new CyclicDependencyException(getCyclicDependencyMessage(path, dependency));
                 }
-                Object dependencyObject = beansMap.get(dependency);
+                String generatedBeanId = ApplicationContext.generateBeanId(dependency); //как брать бин из мапы, если его айдишник генерируется по-другому....
+                Object dependencyObject = newBeansMap.get(generatedBeanId).getObject();
+//                Object dependencyObject = beansMap.get(dependency);
                 if (dependencyObject == null) continue;
                 List<Class<?>> nextDependencies = Arrays.stream(dependencyObject.getClass().getDeclaredFields())
                         .filter(field -> field.isAnnotationPresent(MyAutowired.class))
@@ -99,8 +95,12 @@ public class DependencyInjector {
         for(int i = validPath.size() - 2; i >= 0; i--) {
             Class<?> currentClass = validPath.get(i);
             Class<?> dependencyClass = validPath.get(i + 1);
-            Object currentObject = beansMap.get(currentClass);
-            Object dependencyObject = beansMap.get(dependencyClass);
+//            Object currentObject = beansMap.get(currentClass);
+//            Object dependencyObject = beansMap.get(dependencyClass);
+            String currentClassBeanId = ApplicationContext.generateBeanId(currentClass); //как брать бин из мапы, если его айдишник генерируется по-другому...
+            String dependencyClassBeanId = ApplicationContext.generateBeanId(dependencyClass); //как брать бин из мапы, если его айдишник генерируется по-другому...
+            Object currentObject = newBeansMap.get(currentClassBeanId).getObject();
+            Object dependencyObject = newBeansMap.get(dependencyClassBeanId).getObject();
             if (currentObject == null) System.out.println("Бина типа " + currentClass.getSimpleName() + " нет в контексте");
             if (dependencyObject == null) System.out.println("Бина типа " + dependencyClass.getSimpleName() + " нет в контексте");
             for (Field field: currentClass.getDeclaredFields()){
@@ -115,7 +115,6 @@ public class DependencyInjector {
                         continue;
                     }
                     field.set(currentObject, dependencyObject);
-//                    System.out.println("инжектнули " + dependencyClass.getSimpleName() + " в " + currentClass.getSimpleName());
                     System.out.println("В бине " + currentObject + " в поле " + field.getName() + " только что была выполнена инъекция зависимости " + field.get(currentObject));
                 }
                 catch (IllegalAccessException e){

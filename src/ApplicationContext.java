@@ -15,10 +15,16 @@ import java.util.stream.Stream;
 import static java.util.stream.Collectors.toList;
 
 public class ApplicationContext {
-    private Map<Class<?>, Object> beansMap = new HashMap<>();
+//    private Map<Class<?>, Object> beansMap = new HashMap<>();
 
-    public Map<Class<?>, Object> getBeansMap() {
-        return beansMap;
+    private Map<String, BeanDefinition> newBeansMap = new HashMap<>(); //айдишник и биндефиниш
+
+//    public Map<Class<?>, Object> getBeansMap() {
+//        return beansMap;
+//    }
+
+    public Map<String, BeanDefinition> getNewBeansMap() {
+        return newBeansMap;
     }
 
     public ApplicationContext(String packageName) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, URISyntaxException {
@@ -90,7 +96,8 @@ public class ApplicationContext {
         for (Class<?> classFile: classesWithAnnotation) {
             Object newBean = classFile.getDeclaredConstructor().newInstance();
             System.out.println("Добавление бина " + newBean + " в контекст");
-            beansMap.put(newBean.getClass(), newBean);
+//            beansMap.put(newBean.getClass(), newBean);
+            newBeansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, newBean));
         }
         System.out.println();
     }
@@ -101,5 +108,9 @@ public class ApplicationContext {
 
     public boolean isClassFile(Path path){
         return path.getFileName().toString().endsWith(".class");
+    }
+    public static String generateBeanId(Class<?> clazz){ //пока непонятно, как генерировать айдишник бина???
+        String className = clazz.getSimpleName();
+        return Character.toLowerCase(className.charAt(0)) + className.substring(1);
     }
 }
