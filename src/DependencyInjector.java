@@ -8,32 +8,32 @@ import java.util.stream.Collectors;
 import static java.util.stream.Collectors.toList;
 
 public class DependencyInjector {
-    private final Map<String, BeanDefinition> newBeansMap;
+    private final Map<String, BeanDefinition> beansMap;
 
-    public DependencyInjector(Map<String, BeanDefinition> newBeansMap) {
-        this.newBeansMap = newBeansMap;
+    public DependencyInjector(Map<String, BeanDefinition> beansMap) {
+        this.beansMap = beansMap;
     }
 
     public void dependencyInjection() {
         AtomicInteger number = new AtomicInteger(); //для удобства, потом удалю
-        newBeansMap.forEach((beanId, beanDef) -> {
+        beansMap.forEach((beanId, beanDef) -> {
             Class<?> clazz = beanDef.getBeanClass();
             Object object = beanDef.getObject();
             number.addAndGet(1);
             Map<Class<?>, List<Class<?>>> dependencyGraph = new HashMap<>();
-            List<Field> qualifierFields = Arrays.stream(object.getClass().getDeclaredFields())
-                    .filter(field -> field.isAnnotationPresent(MyQualifier.class))
-                    .collect(toList());
+//            List<Field> qualifierFields = Arrays.stream(object.getClass().getDeclaredFields())
+//                    .filter(field -> field.isAnnotationPresent(MyQualifier.class))
+//                    .collect(toList());
             List<Field> autowiredFields = Arrays.stream(object.getClass().getDeclaredFields())
                     .filter(field -> field.isAnnotationPresent(MyAutowired.class))
                     .collect(toList());
-            qualifierFields.forEach(field -> {
-                System.out.println(number + ") В бине типа " + clazz.getSimpleName()
-                        + " инжектится поле " + beanId + " типа " + field.getType().getSimpleName());
-                if (field.getType() != null) {
-                    dependencyGraph.computeIfAbsent(clazz, k -> new ArrayList<>()).add(field.getType());
-                }
-            });
+//            qualifierFields.forEach(field -> {
+//                System.out.println(number + ") В бине типа " + clazz.getSimpleName()
+//                        + " инжектится поле " + beanId + " типа " + field.getType().getSimpleName());
+//                if (field.getType() != null) {
+//                    dependencyGraph.computeIfAbsent(clazz, k -> new ArrayList<>()).add(field.getType());
+//                }
+//            });
             autowiredFields.forEach(field -> {
                 System.out.println(number + ") В бине типа " + clazz.getSimpleName()
                         + " инжектится поле " + field.getName() + " типа " + field.getType().getSimpleName());
@@ -41,7 +41,7 @@ public class DependencyInjector {
                     dependencyGraph.computeIfAbsent(clazz, k -> new ArrayList<>()).add(field.getType());
                 }
             });
-            if (autowiredFields.isEmpty() && qualifierFields.isEmpty()) { //или если dependencyGraph пустой
+            if (autowiredFields.isEmpty()) { //или если dependencyGraph пустой
                 System.out.println(number + ") Бин " + object + " не имеет зависимостей");
                 System.out.println();
                 return;
@@ -74,7 +74,7 @@ public class DependencyInjector {
                     throw new CyclicDependencyException(getCyclicDependencyMessage(path, dependency));
                 }
                 String generatedBeanId = ApplicationContext.generateBeanId(dependency); //как брать бин из мапы, если его айдишник генерируется по-другому....
-                Object dependencyObject = newBeansMap.get(generatedBeanId).getObject();
+                Object dependencyObject = beansMap.get(generatedBeanId).getObject();
                 if (dependencyObject == null) continue;
                 List<Class<?>> nextDependencies = Arrays.stream(dependencyObject.getClass().getDeclaredFields())
                         .filter(field -> field.isAnnotationPresent(MyAutowired.class))
@@ -110,7 +110,7 @@ public class DependencyInjector {
             Class<?> dependencyClass = validPath.get(i + 1);
             String currentClassBeanId = ApplicationContext.generateBeanId(currentClass); //как брать бин из мапы, если его айдишник генерируется по-другому...
 //            String dependencyClassBeanId = ApplicationContext.generateBeanId(dependencyClass); //как брать бин из мапы, если его айдишник генерируется по-другому...
-            Object currentObject = newBeansMap.get(currentClassBeanId).getObject();
+            Object currentObject = beansMap.get(currentClassBeanId).getObject();
 //            Object dependencyObject = newBeansMap.get(dependencyClassBeanId).getObject();
             if (currentObject == null) System.out.println("Бина типа " + currentClass.getSimpleName() + " нет в контексте");
 //            if (dependencyObject == null) System.out.println("Бина типа " + dependencyClass.getSimpleName() + " нет в контексте");
@@ -132,7 +132,7 @@ public class DependencyInjector {
                     else{
                         dependencyClassBeanId = ApplicationContext.generateBeanId(dependencyClass);
                     }
-                    BeanDefinition dependencyBean = newBeansMap.get(dependencyClassBeanId);
+                    BeanDefinition dependencyBean = beansMap.get(dependencyClassBeanId);
                     if (dependencyBean == null) {
                         System.out.println("Бин с id " + dependencyBean + " не найден");
                         continue;

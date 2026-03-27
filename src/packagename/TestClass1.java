@@ -17,5 +17,5 @@ public class TestClass1 {
 
     @MyAutowired
     @MyQualifier(beanId = "testClass3")
-    private ITestClass ITestClass;
+    private ITestClass iTestClass;
 }

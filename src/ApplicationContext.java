@@ -9,22 +9,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toList;
 
 public class ApplicationContext {
-//    private Map<Class<?>, Object> beansMap = new HashMap<>();
+    private Map<String, BeanDefinition> beansMap = new ConcurrentHashMap<>(); //айдишник и биндефиниш
 
-    private Map<String, BeanDefinition> newBeansMap = new HashMap<>(); //айдишник и биндефиниш
-
-//    public Map<Class<?>, Object> getBeansMap() {
-//        return beansMap;
-//    }
-
-    public Map<String, BeanDefinition> getNewBeansMap() {
-        return newBeansMap;
+    public Map<String, BeanDefinition> getBeansMap() {
+        return beansMap;
     }
 
     public ApplicationContext(String packageName) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, URISyntaxException {
@@ -97,7 +92,7 @@ public class ApplicationContext {
             Object newBean = classFile.getDeclaredConstructor().newInstance();
             System.out.println("Добавление бина " + newBean + " в контекст");
 //            beansMap.put(newBean.getClass(), newBean);
-            newBeansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, newBean));
+            beansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, newBean));
         }
         System.out.println();
     }
