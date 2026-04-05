@@ -1,7 +1,10 @@
+import annotations.MyAutowired;
 import annotations.MyComponent;
+import annotations.MyQualifier;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -17,13 +20,14 @@ import static java.util.stream.Collectors.toList;
 
 public class ApplicationContext {
     private Map<String, BeanDefinition> beansMap = new ConcurrentHashMap<>(); //айдишник и биндефиниш
+    private List<String> sortedBeans = new ArrayList<>(); //для хранения результата топологической сортировки
 
     public Map<String, BeanDefinition> getBeansMap() {
         return beansMap;
     }
 
     public ApplicationContext(String packageName) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, URISyntaxException {
-        addNewBean(packageName);
+        createBeans(packageName);
     }
 
     public Path getTargetPathToPackage(String packageName) throws URISyntaxException {
@@ -71,7 +75,7 @@ public class ApplicationContext {
         return classFilesList;
     }
 
-    public void addNewBean(String packageName) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, URISyntaxException {
+    public void createBeans(String packageName) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, URISyntaxException {
         List<String> classFilesNames = scanPackage(packageName);
         List<Class<?>> classFiles = classFilesNames.stream().map(classFile -> {
             try {
@@ -88,24 +92,88 @@ public class ApplicationContext {
                 System.out.println("Класс " + classFile.getSimpleName() + " содержит аннотацию @MyComponent");
             }
         }
+//        HashMap<String, Class<?>> beanIDToClass = new HashMap<>();
+//        Set<String> beanIDs = classesWithAnnotation.stream().map(clazz -> {
+//            String beanID = generateBeanId(clazz);
+//            beanIDToClass.put(beanID, clazz);
+//            return beanID;
+//        }).collect(Collectors.toSet());
+//        //надо ли хранить их в сэте, чтобы не было одинаковых айдишников???
+
+//        //еще не сохранили бины
+//        System.out.println("еще не сохранили бины, тестируем топологическую сортировку");
+//        sortedBeans = topologicalSort(beanIDs, beanIDToClass);
+//        System.out.println(sortedBeans);
+
+        System.out.println("\nсоздание бинов без инициализации: ");
         for (Class<?> classFile: classesWithAnnotation) {
             Object newBean = classFile.getDeclaredConstructor().newInstance();
             System.out.println("Добавление бина " + newBean + " в контекст");
-//            beansMap.put(newBean.getClass(), newBean);
             beansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, newBean));
         }
-        System.out.println();
+        System.out.println("\nпостроение графа зависимостей:");
+        DependencyInjector dependencyInjector = new DependencyInjector(beansMap);
+        Map<String, Set<String>> dependencyGraph = dependencyInjector.getDependencyGraph();
+        System.out.println("граф зависимостей:");
+        dependencyGraph.forEach((k, v) -> System.out.println("Узел: " + k + ", прямые зависимости: " + v));
+
+        System.out.println("\nвыполнение топологической сортировки:");
+        sortedBeans = dependencyInjector.topologicalSort(dependencyGraph);
+        System.out.println("отсортированные бины, готовые к инъекции: ");
+        System.out.println(sortedBeans);
+        System.out.println("\nвнедрение зависимостей:");
+        dependencyInjector.inject(sortedBeans);
     }
 
     public boolean markedWithAnnotation(Class clazz){
-        return clazz.isAnnotationPresent(MyComponent.class); //подумать, нужно ли передавать аннотацию в параметрах
+        return clazz.isAnnotationPresent(MyComponent.class);
     }
 
     public boolean isClassFile(Path path){
         return path.getFileName().toString().endsWith(".class");
     }
     public static String generateBeanId(Class<?> clazz){ //пока непонятно, как генерировать айдишник бина???
-        String className = clazz.getSimpleName();
+        String simpleClassName = clazz.getSimpleName();
+        String className = clazz.getName();
         return Character.toLowerCase(className.charAt(0)) + className.substring(1);
     }
+
+//    public List<String> topologicalSort(Set<String> beanIDs, HashMap<String, Class<?>> beanIDToClass){
+//        List<String> sortedBeans = new ArrayList<>();
+//        Set<String> visited = new HashSet<>();
+//        Set<String> visiting = new HashSet<>();
+//        for (String beanID: beanIDs){
+//            dfs(beanID, visited, visiting, sortedBeans, beanIDToClass);
+//        }
+//        return sortedBeans;
+//    }
+
+//    private void dfs(String beanID, Set<String> visited, Set<String> visiting, List<String> sortedBeans, HashMap<String, Class<?>> beanIDToClass) {
+//        if (visited.contains(beanID)) {
+//            return;
+//        }
+//        if (visiting.contains(beanID)){
+////            throw new RuntimeException("цикл при сортировке " + beanID); //хз, убрать????
+//            System.out.println("цикл??? " + beanID);
+//            return;
+//        }
+//        visiting.add(beanID);
+//        Class<?> clazz = beanIDToClass.get(beanID);
+//        for (Field field: clazz.getDeclaredFields()){
+//            if (!field.isAnnotationPresent(MyAutowired.class)){
+//                continue;
+//            }
+//            String dependencyBeanId;
+//            if (field.isAnnotationPresent(MyQualifier.class)){
+//                dependencyBeanId = field.getAnnotation(MyQualifier.class).beanId();
+//            }
+//            else{
+//                dependencyBeanId = generateBeanId(field.getType());
+//            }
+//            dfs(dependencyBeanId, visited, visiting, sortedBeans, beanIDToClass);
+//        }
+//        visiting.remove(beanID);
+//        visited.add(beanID);
+//        sortedBeans.add(beanID);
+//    }
 }

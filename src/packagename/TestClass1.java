@@ -15,7 +15,7 @@ public class TestClass1 {
     @MyAutowired
     private Main main;
 
-    @MyAutowired
-    @MyQualifier(beanId = "testClass3")
-    private ITestClass iTestClass;
+//    @MyAutowired
+////    @MyQualifier(beanId = "testClass3")
+//    private ITestClass iTestClass;
 }
