@@ -85,25 +85,13 @@ public class ApplicationContext {
             }
         }).collect(toList());
         List<Class<?>> classesWithAnnotation = new ArrayList<>();
-        System.out.println("Проверка на наличие аннотации:");
+        System.out.println("Проверка на наличие аннотации @MyComponent:");
         for (Class classFile: classFiles) {
             if (markedWithAnnotation(classFile)){
                 classesWithAnnotation.add(classFile);
                 System.out.println("Класс " + classFile.getSimpleName() + " содержит аннотацию @MyComponent");
             }
         }
-//        HashMap<String, Class<?>> beanIDToClass = new HashMap<>();
-//        Set<String> beanIDs = classesWithAnnotation.stream().map(clazz -> {
-//            String beanID = generateBeanId(clazz);
-//            beanIDToClass.put(beanID, clazz);
-//            return beanID;
-//        }).collect(Collectors.toSet());
-//        //надо ли хранить их в сэте, чтобы не было одинаковых айдишников???
-
-//        //еще не сохранили бины
-//        System.out.println("еще не сохранили бины, тестируем топологическую сортировку");
-//        sortedBeans = topologicalSort(beanIDs, beanIDToClass);
-//        System.out.println(sortedBeans);
 
         System.out.println("\nсоздание бинов без инициализации: ");
         for (Class<?> classFile: classesWithAnnotation) {
@@ -111,6 +99,9 @@ public class ApplicationContext {
             System.out.println("Добавление бина " + newBean + " в контекст");
             beansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, newBean));
         }
+        System.out.println();
+        validateQualifiers();
+
         System.out.println("\nпостроение графа зависимостей:");
         DependencyInjector dependencyInjector = new DependencyInjector(beansMap);
         Map<String, Set<String>> dependencyGraph = dependencyInjector.getDependencyGraph();
@@ -138,42 +129,23 @@ public class ApplicationContext {
         return Character.toLowerCase(className.charAt(0)) + className.substring(1);
     }
 
-//    public List<String> topologicalSort(Set<String> beanIDs, HashMap<String, Class<?>> beanIDToClass){
-//        List<String> sortedBeans = new ArrayList<>();
-//        Set<String> visited = new HashSet<>();
-//        Set<String> visiting = new HashSet<>();
-//        for (String beanID: beanIDs){
-//            dfs(beanID, visited, visiting, sortedBeans, beanIDToClass);
-//        }
-//        return sortedBeans;
-//    }
-
-//    private void dfs(String beanID, Set<String> visited, Set<String> visiting, List<String> sortedBeans, HashMap<String, Class<?>> beanIDToClass) {
-//        if (visited.contains(beanID)) {
-//            return;
-//        }
-//        if (visiting.contains(beanID)){
-////            throw new RuntimeException("цикл при сортировке " + beanID); //хз, убрать????
-//            System.out.println("цикл??? " + beanID);
-//            return;
-//        }
-//        visiting.add(beanID);
-//        Class<?> clazz = beanIDToClass.get(beanID);
-//        for (Field field: clazz.getDeclaredFields()){
-//            if (!field.isAnnotationPresent(MyAutowired.class)){
-//                continue;
-//            }
-//            String dependencyBeanId;
-//            if (field.isAnnotationPresent(MyQualifier.class)){
-//                dependencyBeanId = field.getAnnotation(MyQualifier.class).beanId();
-//            }
-//            else{
-//                dependencyBeanId = generateBeanId(field.getType());
-//            }
-//            dfs(dependencyBeanId, visited, visiting, sortedBeans, beanIDToClass);
-//        }
-//        visiting.remove(beanID);
-//        visited.add(beanID);
-//        sortedBeans.add(beanID);
-//    }
+    private void validateQualifiers(){
+        System.out.println("Валидация аннотации @MyQualifier:");
+        for (String beanId: beansMap.keySet()) {
+            BeanDefinition def = beansMap.get(beanId);
+            Class<?> beanClass = def.getBeanClass();
+            for (Field field: beanClass.getDeclaredFields()){
+                if (field.isAnnotationPresent(MyQualifier.class)){
+                    String qualifierBeanId = field.getAnnotation(MyQualifier.class).beanId();
+                    System.out.println("Бин " + beanId + " содержит зависимость " + qualifierBeanId + " в поле " + field.getName() + " через аннотацию @MyQualifier");
+                    if (!beansMap.containsKey(qualifierBeanId)){
+                        throw new RuntimeException("Бин с id " + qualifierBeanId + " не найден. " +
+                                "Поле '" + field.getName() + "' класса '" +
+                                beanClass.getSimpleName() + "' требует этот бин");
+                    }
+                }
+            }
+        }
+        System.out.println("Валидация @MyQualifier пройдена успешно");
+    }
 }
