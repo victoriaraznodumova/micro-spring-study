@@ -1,6 +1,7 @@
 import annotations.MyAutowired;
 import annotations.MyComponent;
 import annotations.MyQualifier;
+import annotations.MyScope;
 
 import java.io.File;
 import java.io.IOException;
@@ -8,9 +9,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -95,9 +94,25 @@ public class ApplicationContext {
 
         System.out.println("\nсоздание бинов без инициализации: ");
         for (Class<?> classFile: classesWithAnnotation) {
-            Object newBean = classFile.getDeclaredConstructor().newInstance();
-            System.out.println("Добавление бина " + newBean + " в контекст");
-            beansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, newBean));
+            Object newBean = null;
+            MyScope annotationScope = classFile.getAnnotation(MyScope.class);
+            String scopeValue;
+            if (annotationScope == null){
+                scopeValue = "singleton";
+//                throw new RuntimeException("Для типа " + classFile + " не указан scope");
+            }
+            else{
+                scopeValue = annotationScope.value();
+            }
+            BeanDefinition.Scope beanDefinitonScope = BeanDefinition.Scope.valueOf(scopeValue.toUpperCase(Locale.ROOT));
+            if (beanDefinitonScope == BeanDefinition.Scope.SINGLETON){
+                newBean = classFile.getDeclaredConstructor().newInstance();
+                System.out.println("Добавление singleton бина " + newBean + " в контекст");
+            }
+            else if (beanDefinitonScope == BeanDefinition.Scope.PROTOTYPE){
+                System.out.println("Регистрация prototype бина " + classFile.getName());
+            }
+            beansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, newBean, beanDefinitonScope));
         }
         System.out.println();
         validateQualifiers();
@@ -129,6 +144,13 @@ public class ApplicationContext {
         return Character.toLowerCase(className.charAt(0)) + className.substring(1);
     }
 
+    public static String resolveDependencyId(Field field) {
+        if (field.isAnnotationPresent(MyQualifier.class)) {
+            return field.getAnnotation(MyQualifier.class).beanId();
+        }
+        return ApplicationContext.generateBeanId(field.getType());
+    }
+
     private void validateQualifiers(){
         System.out.println("Валидация аннотации @MyQualifier:");
         for (String beanId: beansMap.keySet()) {
@@ -138,7 +160,8 @@ public class ApplicationContext {
                 if (field.isAnnotationPresent(MyQualifier.class)){
                     String qualifierBeanId = field.getAnnotation(MyQualifier.class).beanId();
                     System.out.println("Бин " + beanId + " содержит зависимость " + qualifierBeanId + " в поле " + field.getName() + " через аннотацию @MyQualifier");
-                    if (!beansMap.containsKey(qualifierBeanId)){
+                    BeanDefinition dependencyBeanDefinition = beansMap.get(qualifierBeanId);
+                    if (dependencyBeanDefinition == null){
                         throw new RuntimeException("Бин с id " + qualifierBeanId + " не найден. " +
                                 "Поле '" + field.getName() + "' класса '" +
                                 beanClass.getSimpleName() + "' требует этот бин");
@@ -147,5 +170,46 @@ public class ApplicationContext {
             }
         }
         System.out.println("Валидация @MyQualifier пройдена успешно");
+    }
+
+    public BeanDefinition getBeanDefinition(Class<?> beanType) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+        Object bean = null;
+        if (beanType == null){
+            throw new RuntimeException("Для поиска бина передан тип null");
+        }
+        BeanDefinition beanDefinition = null;
+        for (Map.Entry<String, BeanDefinition> entry: beansMap.entrySet()){
+            beanDefinition = entry.getValue();
+            Class<?> existingType = beanDefinition.getBeanClass();
+            if (beanType.equals(existingType)){
+                System.out.println("Проверка, значение бина: " + beanDefinition.getObject() + ", тип бина: " + beanDefinition.getBeanClass() + ", область видимости бина: " + beanDefinition.getScope());
+                MyScope scope = existingType.getAnnotation(MyScope.class);
+                String scopeValue;
+                if (scope == null){
+//                    throw new RuntimeException("Для найденного бина типа " + beanType + " не указан scope");
+                    scopeValue = "singleton";
+                }
+                else{
+                    scopeValue = scope.value();
+                }
+                if (scopeValue.equals("singleton")){
+//                    bean = beanDefinition.getObject();
+                    return beanDefinition;
+                }
+                if (scopeValue.equals("prototype")){
+//                    bean = beanDefinition.createNewInstance();
+                    DependencyInjector dependencyInjector = new DependencyInjector(beansMap);
+                    return new BeanDefinition(beanDefinition.getBeanClass(), dependencyInjector.getBeanInstance(beanDefinition));
+                }
+                if (scopeValue.equals("thread")){
+
+                }
+                return beanDefinition;
+            }
+        }
+        if (bean == null){
+            throw new RuntimeException("Бин типа " + beanType.getName() + " не найден в контейнере");
+        }
+        return beanDefinition;
     }
 }

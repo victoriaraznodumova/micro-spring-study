@@ -1,10 +1,9 @@
 import annotations.MyAutowired;
 import annotations.MyQualifier;
-
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import static java.util.stream.Collectors.toList;
 
 public class DependencyInjector {
     private final Map<String, BeanDefinition> beansMap;
@@ -14,7 +13,7 @@ public class DependencyInjector {
         this.beansMap = beansMap;
     }
 
-    public Map<String, Set<String>> getDependencyGraph(){
+    public Map<String, Set<String>> getDependencyGraph() {
         AtomicInteger number = new AtomicInteger(); //для удобства, потом удалю
         Map<String, Set<String>> graph = new HashMap<>();
         beansMap.forEach((beanId, beanDef) -> {
@@ -23,11 +22,10 @@ public class DependencyInjector {
             }
             else{
                 Class<?> clazz = beanDef.getBeanClass();
-                Object object = beanDef.getObject();
                 number.addAndGet(1);
                 List<Field> autowiredFields = new ArrayList<>();
                 List<Field> qualifierFields = new ArrayList<>();
-                Arrays.stream(object.getClass().getDeclaredFields())
+                Arrays.stream(clazz.getDeclaredFields())
                         .filter(field -> field.isAnnotationPresent(MyAutowired.class))
                         .forEach((field) -> {
                             if (field.isAnnotationPresent(MyQualifier.class)){
@@ -52,7 +50,7 @@ public class DependencyInjector {
                     }
                 });
                 if (autowiredFields.isEmpty() && qualifierFields.isEmpty()) {
-                    System.out.println(number + ") Бин " + object + " не содержит зависимости");
+                    System.out.println(number + ") Бин " + beanId + " не содержит зависимости");
                     System.out.println();
                     return;
                 }
@@ -117,18 +115,18 @@ public class DependencyInjector {
         result.add(node);
     }
 
-    public void inject(List<String> sortedBeans) throws IllegalAccessException {
+    public void inject(List<String> sortedBeans) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException, InstantiationException {
         System.out.println("Будет выполняться инъекция зависимостей");
         for(String beanID: sortedBeans) {
             BeanDefinition beanDefinition = beansMap.get(beanID);
             if (beanDefinition == null) {
-                System.out.println("Бин " + beanID + " не найден в контексте");
+                System.out.println("Бин " + beanID + " содержит значение null");
                 continue;
             }
             Object obj = beanDefinition.getObject();
             Class<?> clazz = beanDefinition.getBeanClass();
             if ((obj == null) || (clazz == null)){
-                System.out.println("Бин " + beanID + " содержит значение null ");
+//                System.out.println("Бин " + beanID + " содержит значение null ");
                 continue;
             }
             else{
@@ -137,7 +135,6 @@ public class DependencyInjector {
                     boolean hasQualifier = field.isAnnotationPresent(MyQualifier.class);
                     if (!hasAutowired && !hasQualifier) continue;
                     Class<?> dependencyClass = field.getType();
-
                     try {
                         field.setAccessible(true);
                         Object existingValue = field.get(obj);
@@ -157,9 +154,14 @@ public class DependencyInjector {
                                     + field.getName() + "' класса '" + clazz.getSimpleName());
                             continue;
                         }
-                        Object dependencyObject = dependencyBeanDefinition.getObject();
+                        Object dependencyObject = getBeanInstance(dependencyBeanDefinition);
+//                        if (dependencyBeanDefinition.isBeanSingleton()){
+//                            dependencyObject = dependencyBeanDefinition.getObject();
+//                        } else if (dependencyBeanDefinition.isBeanPrototype()){
+//                            dependencyObject = dependencyBeanDefinition.createNewInstance();
+//                        }
                         if (dependencyObject == null) {
-                            System.out.println("Бин " + dependencyBeanID + " содержит null");
+                            System.out.println("Не удалось создать бин " + dependencyBeanID);
                             continue;
                         }
                         field.set(obj, dependencyObject);
@@ -173,5 +175,38 @@ public class DependencyInjector {
             }
         }
         System.out.println();
+    }
+
+    public Object getBeanInstance(BeanDefinition beanDefinition) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+        if (beanDefinition.isBeanSingleton()){
+            return beanDefinition.getObject();
+        } else if (beanDefinition.isBeanPrototype()){
+            return initializePrototypeBean(beanDefinition);
+        }
+        return null;
+    }
+
+    private Object initializePrototypeBean(BeanDefinition beanDefinition) {
+        try {
+            Object object = beanDefinition.getBeanClass().getDeclaredConstructor().newInstance();
+//            Object object = beanDefinition.createNewInstance();
+            for (Field field : beanDefinition.getBeanClass().getDeclaredFields()) {
+                if (!field.isAnnotationPresent(MyAutowired.class) &&
+                        !field.isAnnotationPresent(MyQualifier.class)) {
+                    continue;
+                }
+                String dependencyId = ApplicationContext.resolveDependencyId(field);
+                BeanDefinition dependencyBeanDefinition = beansMap.get(dependencyId);
+                if (dependencyBeanDefinition == null) continue;
+                Object dependency = getBeanInstance(dependencyBeanDefinition);
+                field.setAccessible(true);
+                field.set(object, dependency);
+                System.out.println("В бине " + object + " в поле " + field.getName() +
+                        " только что была выполнена инъекция зависимости " + field.get(object));
+            }
+            return object;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
