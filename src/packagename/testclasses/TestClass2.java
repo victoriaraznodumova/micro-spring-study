@@ -1,8 +1,7 @@
-package packagename.packagename2;
+package packagename.testclasses;
 
 import annotations.MyAutowired;
 import annotations.MyComponent;
-import packagename.TestClass1;
 
 @MyComponent
 public class TestClass2 implements ITestClass {

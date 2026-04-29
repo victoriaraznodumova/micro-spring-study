@@ -1,11 +1,10 @@
-package packagename;
+package packagename.testclasses;
 
 
 import annotations.MyAutowired;
 import annotations.MyComponent;
 import annotations.MyQualifier;
 import annotations.MyScope;
-import packagename.packagename2.ITestClass;
 
 @MyComponent
 @MyScope("prototype")
@@ -21,6 +20,6 @@ public class TestClass1 {
     private Main main;
 
     @MyAutowired
-    @MyQualifier(beanId = "packagename.packagename2.TestClass3")
+    @MyQualifier(beanId = "packagename.testclasses.TestClass3")
     private ITestClass iTestClass;
 }

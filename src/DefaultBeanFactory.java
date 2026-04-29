@@ -1,6 +1,9 @@
 import annotations.*;
+import packagename.proxy.threadscope.ThreadBeanProxyFactory;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -8,7 +11,6 @@ import static java.util.stream.Collectors.toList;
 
 public class DefaultBeanFactory implements BeanFactory{
     private DependencyInjector dependencyInjector;
-
     private Map<String, BeanDefinition> beansMap = new ConcurrentHashMap<>(); //айдишник и биндефиниш
     private List<String> sortedBeans = new ArrayList<>(); //для хранения результата топологической сортировки
 
@@ -23,6 +25,13 @@ public class DefaultBeanFactory implements BeanFactory{
         createBeansWithoutInitialization(classFilesNames);
         validateQualifiers();
         dependencyInjector = new DependencyInjector(beansMap);
+        for (BeanDefinition beanDefinition: beansMap.values()){
+            if (beanDefinition.isBeanSingleton()){
+//                Object beanObject = createBeanWithConstructor(beanDefinition);
+                Object beanObject = dependencyInjector.initializeBeanWithConstructor(beanDefinition);
+                beanDefinition.setObject(beanObject);
+            }
+        }
         System.out.println("\nпостроение графа зависимостей:");
         Map<String, Set<String>> dependencyGraph = getDependencyGraph();
         System.out.println("граф зависимостей:");
@@ -35,7 +44,7 @@ public class DefaultBeanFactory implements BeanFactory{
         inject();
     }
 
-    private Map<String, BeanDefinition> createBeansWithoutInitialization(List<String> classFilesNames) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+    private Map<String, BeanDefinition> createBeansWithoutInitialization(List<String> classFilesNames)   {
         List<Class<?>> classFiles = classFilesNames.stream().map(classFile -> {
             try {
                 return Class.forName(classFile);
@@ -45,15 +54,34 @@ public class DefaultBeanFactory implements BeanFactory{
         }).collect(toList());
         List<Class<?>> classesWithAnnotation = new ArrayList<>();
         System.out.println("Проверка на наличие аннотации @MyComponent:");
-        for (Class classFile: classFiles) {
+        for (Class<?> classFile: classFiles) {
             if (markedWithAnnotation(classFile)){
                 classesWithAnnotation.add(classFile);
                 System.out.println("Класс " + classFile.getSimpleName() + " содержит аннотацию @MyComponent");
             }
+
+//            System.out.println("\nсоздание бинов без инициализации (теперь просто регистрация): ");
+//            MyScope annotationScope = classFile.getAnnotation(MyScope.class);
+//            String scopeValue;
+//            if (annotationScope == null){
+//                scopeValue = "singleton";
+////                throw new RuntimeException("Для типа " + classFile + " не указан scope");
+//            }
+//            else{
+//                scopeValue = annotationScope.value();
+//            }
+//            BeanDefinition.Scope beanDefinitonScope = BeanDefinition.Scope.valueOf(scopeValue.toUpperCase(Locale.ROOT));
+//            beansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, null, beanDefinitonScope));
+//            System.out.println("Зарегистрирован бин " + classFile.getSimpleName() + " scope " + beanDefinitonScope);
         }
-        System.out.println("\nсоздание бинов без инициализации: ");
+//        System.out.println();
+//        return beansMap;
+
+        System.out.println("\nсоздание бинов без инициализации (теперь просто регистрация): ");
         for (Class<?> classFile: classesWithAnnotation) {
-            Object newBean = null;
+            if (classFile.isInterface() || Modifier.isAbstract(classFile.getModifiers())) { // не регистрируем интерфейсы и абстрактные классы
+                continue;
+            }
             MyScope annotationScope = classFile.getAnnotation(MyScope.class);
             String scopeValue;
             if (annotationScope == null){
@@ -64,17 +92,39 @@ public class DefaultBeanFactory implements BeanFactory{
                 scopeValue = annotationScope.value();
             }
             BeanDefinition.Scope beanDefinitonScope = BeanDefinition.Scope.valueOf(scopeValue.toUpperCase(Locale.ROOT));
-            if (beanDefinitonScope == BeanDefinition.Scope.SINGLETON){
-                newBean = classFile.getDeclaredConstructor().newInstance();
-                System.out.println("Добавление singleton бина " + newBean + " в контекст");
-            }
-            else if (beanDefinitonScope == BeanDefinition.Scope.PROTOTYPE){
-                System.out.println("Регистрация prototype бина " + classFile.getName());
-            }
-            beansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, newBean, beanDefinitonScope));
+            beansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, null, beanDefinitonScope));
+            System.out.println("Зарегистрирован бин " + classFile.getSimpleName() + " scope " + beanDefinitonScope);
         }
         System.out.println();
         return beansMap;
+
+
+//        for (Class<?> classFile: classesWithAnnotation) {
+//            Object newBean = null;
+////            MyScope annotationScope = classFile.getAnnotation(MyScope.class);
+////            String scopeValue;
+////            if (annotationScope == null){
+////                scopeValue = "singleton";
+//////                throw new RuntimeException("Для типа " + classFile + " не указан scope");
+////            }
+////            else{
+////                scopeValue = annotationScope.value();
+////            }
+//            BeanDefinition.Scope beanDefinitonScope = BeanDefinition.Scope.valueOf(scopeValue.toUpperCase(Locale.ROOT));
+//            if (beanDefinitonScope == BeanDefinition.Scope.SINGLETON){
+//
+////                newBean = classFile.getDeclaredConstructor().newInstance();
+//                newBean = null;
+//
+//                System.out.println("Добавление singleton бина " + newBean + " в контекст");
+//            }
+//            else if (beanDefinitonScope == BeanDefinition.Scope.PROTOTYPE){
+//                System.out.println("Регистрация prototype бина " + classFile.getName());
+//            }
+//            beansMap.put(generateBeanId(classFile), new BeanDefinition(classFile, newBean, beanDefinitonScope));
+//        }
+//        System.out.println();
+//        return beansMap;
     }
 
     public boolean markedWithAnnotation(Class clazz){
@@ -115,8 +165,8 @@ public class DefaultBeanFactory implements BeanFactory{
 
     public void processTopologicalSort(){
         sortedBeans = dependencyInjector.topologicalSort(getDependencyGraph());
-        System.out.println("отсортированные бины, готовые к инъекции: ");
-        System.out.println(sortedBeans);
+//        System.out.println("отсортированные бины, готовые к инъекции: ");
+//        System.out.println(sortedBeans);
     }
 
     public void inject() throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
@@ -134,7 +184,7 @@ public class DefaultBeanFactory implements BeanFactory{
             beanDefinition = entry.getValue();
             Class<?> existingType = beanDefinition.getBeanClass();
             if (beanType.equals(existingType)){
-                System.out.println("Проверка, значение бина: " + beanDefinition.getObject() + ", тип бина: " + beanDefinition.getBeanClass() + ", область видимости бина: " + beanDefinition.getScope());
+                System.out.println("Проверка, значение бина из контекста: " + beanDefinition.getObject() + ", тип бина: " + beanDefinition.getBeanClass() + ", область видимости бина: " + beanDefinition.getScope());
                 MyScope scope = existingType.getAnnotation(MyScope.class);
                 return resolveByScope(beanDefinition, scope);
             }
@@ -151,11 +201,8 @@ public class DefaultBeanFactory implements BeanFactory{
 //                    throw new RuntimeException("Для найденного бина типа " + beanType + " не указан scope");
             scopeValue = "singleton";
         }
-        else{
-            scopeValue = scope.value();
-        }
+        else scopeValue = scope.value();
         if (scopeValue.equals("singleton")){
-//                    bean = beanDefinition.getObject();
             return beanDefinition;
         }
         if (scopeValue.equals("prototype")){
@@ -164,8 +211,46 @@ public class DefaultBeanFactory implements BeanFactory{
             return new BeanDefinition(beanDefinition.getBeanClass(), dependencyInjector.getBeanInstance(beanDefinition));
         }
         if (scopeValue.equals("thread")){
-
+            //????????????????????
+            return new BeanDefinition(beanDefinition.getBeanClass(), ThreadBeanProxyFactory.createThreadProxy(generateBeanId(beanDefinition.getBeanClass())));
         }
         return beanDefinition;
     }
+
+//    private Object createBeanWithConstructor(BeanDefinition beanDefinition){
+//        try{
+//            Class<?> clazz = beanDefinition.getBeanClass();
+//            if (clazz.isInterface() || Modifier.isAbstract(clazz.getModifiers())) {
+//                throw new RuntimeException("Нельзя создать бин для типа " + clazz.getName());
+//            }
+//            Constructor<?> constructor = Arrays.stream(clazz.getDeclaredConstructors())
+//                    .filter(c -> c.isAnnotationPresent(MyAutowired.class) || c.getParameterCount() > 0)
+//                    .findFirst()
+//                    .orElse(clazz.getDeclaredConstructors()[0]);
+//            Object[] args = Arrays.stream(constructor.getParameterTypes())
+//                    .map(type -> {
+//                        BeanDefinition dependencyBeanDef = findBeanByType(type);
+//                        if (dependencyBeanDef == null){
+//                            throw new RuntimeException("Не найден бин типа " + type.getName() + " для передачи в качестве параметра в конструктор бина типа " + clazz);
+//                        }
+//                        try{
+//                            if (dependencyBeanDef.isBeanThread()){
+//                                String beanId = generateBeanId(dependencyBeanDef.getBeanClass());
+//                                return ThreadBeanProxyFactory.createThreadProxy(beanId);
+////                                Class<?> iface = type;
+////                                return ThreadBeanProxyFactory.createThreadProxy(generateBeanId(iface));
+//                            }
+//                            return dependencyInjector.getBeanInstance(dependencyBeanDef);
+//                        }
+//                        catch (Exception e){
+//                            throw new RuntimeException("Не удалось создать объект бина типа " + type + " для передачи в качестве параметра в конструктор бина типа " + clazz);
+//                        }
+//                    }).toArray();
+//            constructor.setAccessible(true);
+//            return constructor.newInstance(args);
+//        }
+//        catch (Exception e){
+//            throw new RuntimeException(e);
+//        }
+//    }
 }

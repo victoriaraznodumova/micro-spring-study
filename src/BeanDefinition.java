@@ -54,9 +54,15 @@ public class BeanDefinition {
         return  "тип бина: " + beanClass.getSimpleName() +
                 ", ссылка на бин: " + object;
     }
+
+    public void setObject(Object object) {
+        this.object = object;
+    }
+
     public enum Scope{
         SINGLETON,
-        PROTOTYPE
+        PROTOTYPE,
+        THREAD
     }
 
     public boolean isBeanSingleton(){
@@ -64,6 +70,9 @@ public class BeanDefinition {
     }
     public boolean isBeanPrototype(){
         return scope == Scope.PROTOTYPE;
+    }
+    public boolean isBeanThread(){
+        return scope == Scope.THREAD;
     }
 
     public Enum getScope() {

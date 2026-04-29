@@ -1,7 +1,12 @@
 import annotations.MyAutowired;
 import annotations.MyQualifier;
+import packagename.proxy.threadscope.ThreadBeanProxyFactory;
+import packagename.proxy.threadscope.ThreadContext;
+
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -38,7 +43,14 @@ public class DependencyInjector {
                     System.out.println(number + ") В бине типа " + clazz.getSimpleName()
                             + " инжектится поле " + field.getName() + " типа " + field.getType().getSimpleName());
                     if (field.getType() != null) {
-                        graph.computeIfAbsent(clazz.getName(), k -> new HashSet<String>()).add(field.getType().getName());
+                        BeanDefinition dep = findBeanByType(field.getType());
+
+                        if (dep != null) {
+                            String depId = ApplicationContext.generateBeanId(dep.getBeanClass());
+                            graph.computeIfAbsent(clazz.getName(), k -> new HashSet<>())
+                                    .add(depId);
+                        }
+//                        graph.computeIfAbsent(clazz.getName(), k -> new HashSet<String>()).add(field.getType().getName());
                     }
                 });
                 qualifierFields.forEach(field -> {
@@ -115,7 +127,7 @@ public class DependencyInjector {
         result.add(node);
     }
 
-    public void inject(List<String> sortedBeans) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException, InstantiationException {
+    public void inject(List<String> sortedBeans) throws InvocationTargetException, NoSuchMethodException, InstantiationException {
         System.out.println("Будет выполняться инъекция зависимостей");
         for(String beanID: sortedBeans) {
             BeanDefinition beanDefinition = beansMap.get(beanID);
@@ -154,6 +166,12 @@ public class DependencyInjector {
                                     + field.getName() + "' класса '" + clazz.getSimpleName());
                             continue;
                         }
+                        if (dependencyBeanDefinition.isBeanThread()){
+                            Object proxy = ThreadBeanProxyFactory.createThreadProxy(dependencyBeanID);
+                            field.set(obj, proxy);
+                            System.out.println("В бине " + obj + " в поле " + field.getName() + " внедрен thread proxy");
+                            continue;
+                        }
                         Object dependencyObject = getBeanInstance(dependencyBeanDefinition);
 //                        if (dependencyBeanDefinition.isBeanSingleton()){
 //                            dependencyObject = dependencyBeanDefinition.getObject();
@@ -181,32 +199,108 @@ public class DependencyInjector {
         if (beanDefinition.isBeanSingleton()){
             return beanDefinition.getObject();
         } else if (beanDefinition.isBeanPrototype()){
-            return initializePrototypeBean(beanDefinition);
+            return initializeBeanWithConstructor(beanDefinition);
         }
-        return null;
+//        else if (beanDefinition.isBeanThread()){
+//            String beanId = ApplicationContext.generateBeanId(beanDefinition.getBeanClass());
+//            Object existing = ThreadContext.get(beanId);
+//            if (existing != null){
+//                return existing;
+//            }
+//            Object newBean = initializePrototypeBean(beanDefinition);
+//            ThreadContext.set(beanId, newBean);
+//            return newBean;
+////            return initializePrototypeBean(beanDefinition);
+//        }
+        else if (beanDefinition.isBeanThread()){
+            String beanId = ApplicationContext.generateBeanId(beanDefinition.getBeanClass());
+            Object existing = ThreadContext.get(beanId);
+            if (existing != null){
+                return existing;
+            }
+            throw new RuntimeException("Thread bean должен создаваться только через proxy, а не через Dependency Injection");
+        }
+        return null; //убрать????
     }
 
-    private Object initializePrototypeBean(BeanDefinition beanDefinition) {
+    public Object initializeBeanWithConstructor(BeanDefinition beanDefinition) {
         try {
-            Object object = beanDefinition.getBeanClass().getDeclaredConstructor().newInstance();
-//            Object object = beanDefinition.createNewInstance();
-            for (Field field : beanDefinition.getBeanClass().getDeclaredFields()) {
-                if (!field.isAnnotationPresent(MyAutowired.class) &&
-                        !field.isAnnotationPresent(MyQualifier.class)) {
-                    continue;
-                }
-                String dependencyId = ApplicationContext.resolveDependencyId(field);
-                BeanDefinition dependencyBeanDefinition = beansMap.get(dependencyId);
-                if (dependencyBeanDefinition == null) continue;
-                Object dependency = getBeanInstance(dependencyBeanDefinition);
-                field.setAccessible(true);
-                field.set(object, dependency);
-                System.out.println("В бине " + object + " в поле " + field.getName() +
-                        " только что была выполнена инъекция зависимости " + field.get(object));
+            Class<?> clazz = beanDefinition.getBeanClass();
+            if (clazz.isInterface() || Modifier.isAbstract(clazz.getModifiers())) {
+                throw new RuntimeException("Нельзя создать бин для типа " + clazz.getName());
             }
-            return object;
+//            Constructor<?>[] constructors = clazz.getDeclaredConstructors();
+//            if (constructors.length == 0) {
+//                throw new RuntimeException("У класса " + clazz.getName() + " нет конструкторов: ");
+//            }
+            Constructor<?> constructor = Arrays.stream(clazz.getDeclaredConstructors())
+                    .filter(c -> c.isAnnotationPresent(MyAutowired.class) || c.getParameterCount() > 0)
+                    .findFirst()
+                    .orElse(clazz.getDeclaredConstructors()[0]);
+            Object[] args = Arrays.stream(constructor.getParameterTypes())
+                    .map(type -> {
+                        BeanDefinition dependencyBeanDefinition = findBeanByType(type);
+                        if (dependencyBeanDefinition == null) {
+                            throw new RuntimeException("Не найден бин типа " + type.getName() + " для передачи в качестве параметра в конструктор бина типа " + clazz);
+                        }
+                        if (dependencyBeanDefinition.isBeanThread()) {
+                            String beanId = ApplicationContext.generateBeanId(dependencyBeanDefinition.getBeanClass());
+                            return ThreadBeanProxyFactory.createThreadProxy(beanId);
+//                            throw new RuntimeException("Thread bean должен создаваться только через proxy, а не через Dependency Injection");
+                        }
+                        try {
+                            return getBeanInstance(dependencyBeanDefinition);
+                        } catch (Exception e) {
+                            throw new RuntimeException("Не удалось создать объект бина типа " + type + " для передачи в качестве параметра в конструктор бина типа " + clazz);
+                        }
+                    }).toArray();
+            constructor.setAccessible(true);
+            return constructor.newInstance(args);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    //предыдущая версия метода initializeBeanWithConstructor
+
+//    private Object initializePrototypeBean(BeanDefinition beanDefinition) {
+//        try {
+//            Object object = beanDefinition.getBeanClass().getDeclaredConstructor().newInstance();
+////            Object object = beanDefinition.createNewInstance();
+//            for (Field field : beanDefinition.getBeanClass().getDeclaredFields()) {
+//                if (!field.isAnnotationPresent(MyAutowired.class) &&
+//                        !field.isAnnotationPresent(MyQualifier.class)) {
+//                    continue;
+//                }
+//                String dependencyId = ApplicationContext.resolveDependencyId(field);
+//                BeanDefinition dependencyBeanDefinition = beansMap.get(dependencyId);
+//                if (dependencyBeanDefinition == null) continue;
+//                Object dependency = getBeanInstance(dependencyBeanDefinition);
+//                field.setAccessible(true);
+//                field.set(object, dependency);
+//                System.out.println("В бине " + object + " в поле " + field.getName() +
+//                        " только что была выполнена инъекция зависимости " + field.get(object));
+//            }
+//            return object;
+//        } catch (Exception e) {
+//            throw new RuntimeException(e);
+//        }
+//    }
+
+    private BeanDefinition findBeanByType(Class<?> clazz) {
+        BeanDefinition targetBeanDefinition = null;
+        for (BeanDefinition beanDefinition : beansMap.values()) {
+            Class<?> beanClass = beanDefinition.getBeanClass();
+            if (clazz.equals(beanClass)) {
+                return beanDefinition;
+            }
+            if (clazz.isAssignableFrom(beanClass)) {
+                if (targetBeanDefinition != null) {
+                    throw new RuntimeException("Несколько реализаций для " + clazz.getName());
+                }
+                targetBeanDefinition = beanDefinition;
+            }
+        }
+        return targetBeanDefinition;
     }
 }

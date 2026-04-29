@@ -1,11 +1,8 @@
-package packagename;
+package packagename.testclasses;
 
 import annotations.MyAutowired;
 import annotations.MyComponent;
 import annotations.MyScope;
-import packagename.packagename2.TestClass2;
-import packagename.packagename2.TestClass3;
-
 
 @MyComponent
 @MyScope()

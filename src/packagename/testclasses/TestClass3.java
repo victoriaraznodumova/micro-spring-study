@@ -1,4 +1,4 @@
-package packagename.packagename2;
+package packagename.testclasses;
 
 import annotations.MyComponent;
 import annotations.MyScope;

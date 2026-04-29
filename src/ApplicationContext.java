@@ -1,4 +1,5 @@
 import annotations.*;
+import packagename.proxy.threadscope.ThreadBeanProxyFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -8,31 +9,22 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.*;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-
 public class ApplicationContext {
-//    private Map<String, BeanDefinition> beansMap = new ConcurrentHashMap<>(); //айдишник и биндефиниш
-    private List<String> sortedBeans = new ArrayList<>(); //для хранения результата топологической сортировки
     private BeanFactory beanFactory;
-
-//    public Map<String, BeanDefinition> getBeansMap() {
-//        return beansMap;
-//    }
 
     public ApplicationContext(String packageName) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException, URISyntaxException {
         beanFactory = new DefaultBeanFactory();
-//        createBeans(packageName);
-        createWithFactory(packageName);
+        createBeansWithFactory(packageName);
     }
 
     public Map<String, BeanDefinition> getBeansMap(){
         return beanFactory.getBeansMap();
     }
 
-    public void createWithFactory(String packageName) throws URISyntaxException, InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
+    public void createBeansWithFactory(String packageName) throws URISyntaxException, InvocationTargetException, IllegalAccessException, NoSuchMethodException, InstantiationException {
         beanFactory.createBeans(scanPackage(packageName));
     }
 
@@ -81,8 +73,29 @@ public class ApplicationContext {
         }
     }
 
+    public Object getBean(Class<?> clazz) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException
+    {
+        BeanDefinition beanDefinition = getBeanDefinition(clazz);
+        if (beanDefinition.isBeanThread()) {
+            String beanId = ApplicationContext.generateBeanId(clazz);
+            return ThreadBeanProxyFactory.createThreadProxy(beanId);
+        }
+        DependencyInjector dependencyInjector= new DependencyInjector(getBeansMap());
+        return dependencyInjector.getBeanInstance(beanDefinition);
+    }
+
+    public BeanDefinition getBeanDefinition(Class<?> clazz) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+        return beanFactory.getBeanDefinition(clazz);
+    }
+
     public boolean isClassFile(Path path){
         return path.getFileName().toString().endsWith(".class");
+    }
+
+    public static String generateBeanId(Class<?> clazz){ //пока непонятно, как генерировать айдишник бина???
+//        String simpleClassName = clazz.getSimpleName();
+        String className = clazz.getName();
+        return Character.toLowerCase(className.charAt(0)) + className.substring(1);
     }
 
     public static String resolveDependencyId(Field field) {
@@ -90,15 +103,5 @@ public class ApplicationContext {
             return field.getAnnotation(MyQualifier.class).beanId();
         }
         return ApplicationContext.generateBeanId(field.getType());
-    }
-
-    public static String generateBeanId(Class<?> clazz){ //пока непонятно, как генерировать айдишник бина???
-        String simpleClassName = clazz.getSimpleName();
-        String className = clazz.getName();
-        return Character.toLowerCase(className.charAt(0)) + className.substring(1);
-    }
-
-    public BeanDefinition getBeanDefinition(Class<?> beanType) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
-        return beanFactory.getBeanDefinition(beanType);
     }
 }
